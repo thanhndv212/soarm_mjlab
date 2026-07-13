@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soarm_mjlab"
+version = "0.1.0"
+description = "RL training of SO-ARM100 in MuJoCo via mjlab, deployed through soarm_sdk.RobotInterface"
+readme = "README.md"
+authors = [
+    { name = "Thanh Nguyen" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    # Hard-pinned, not >=: both are fast-moving research libraries, and an
+    # unpinned upgrade silently changing physics/API breaks reproducibility
+    # of existing checkpoints. Verified installable together on macOS arm64
+    # (2026-07-14) — re-pin deliberately, not by drifting with `pip install -U`.
+    "mjlab==1.5.0",
+    "mujoco-warp==3.10.0.2",
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+keywords = ["soarm", "mjlab", "mujoco", "reinforcement-learning", "robotics", "manipulator"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/thanhndv212/soarm_mjlab"
+Source = "https://github.com/thanhndv212/soarm_mjlab"
+Changelog = "https://github.com/thanhndv212/soarm_mjlab/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["soarm_mjlab*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
