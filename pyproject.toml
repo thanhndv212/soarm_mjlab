@@ -17,7 +17,9 @@ dependencies = [
     # unpinned upgrade silently changing physics/API breaks reproducibility
     # of existing checkpoints. Verified installable together on macOS arm64
     # (2026-07-14) — re-pin deliberately, not by drifting with `pip install -U`.
-    "mjlab==1.5.0",
+    # uv.lock pins the full resolved tree on top of this; these two are kept
+    # explicit anyway as documented intent, same as mjlab's own `~=3.10.0`
+    # tightened to an exact pin.
     "mujoco-warp==3.10.0.2",
 ]
 
@@ -32,15 +34,25 @@ classifiers = [
 keywords = ["soarm", "mjlab", "mujoco", "reinforcement-learning", "robotics", "manipulator"]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "ruff>=0.6",
-]
+# mjlab itself gates torch behind these same two extra names (see its
+# pyproject.toml) — forwarding them here so picking a variant once, at the
+# soarm_mjlab level, propagates through. `torch` is listed explicitly (not
+# just pulled transitively via mjlab[...]) because uv requires the package
+# named in [tool.uv.sources]'s extra= to appear directly in that extra's
+# dependency list. Mutually exclusive: see [tool.uv.conflicts] below.
+cpu = ["mjlab[cpu]==1.5.0", "torch>=2.7.0"]
+cu128 = ["mjlab[cu128]==1.5.0", "torch>=2.7.0"]
 
 [project.urls]
 Homepage = "https://github.com/thanhndv212/soarm_mjlab"
 Source = "https://github.com/thanhndv212/soarm_mjlab"
 Changelog = "https://github.com/thanhndv212/soarm_mjlab/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -48,3 +60,31 @@ include = ["soarm_mjlab*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+conflicts = [
+    [{ extra = "cpu" }, { extra = "cu128" }],
+]
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+# Mirrors mjlab's own torch routing (its [tool.uv.sources] doesn't propagate
+# to consumers — it's root-project-only config in uv, so it's re-declared
+# here, gated on our own cpu/cu128 extras instead of mjlab's). No-op on
+# macOS (darwin has one torch wheel, no CPU/CUDA choice to make).
+torch = [
+    { index = "pytorch-cu128", extra = "cu128", marker = "sys_platform != 'darwin'" },
+    { index = "pytorch-cpu", extra = "cpu", marker = "sys_platform != 'darwin'" },
+]

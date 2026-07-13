@@ -16,18 +16,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: "3.11"
+          enable-cache: true
 
-      - name: Install package and dev dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+      - name: Sync (cpu extra, --locked fails the build on lockfile drift)
+        run: uv sync --locked --extra cpu --group dev
 
       - name: Lint
-        run: ruff check soarm_mjlab tests
+        run: uv run ruff check soarm_mjlab tests
 
       - name: Test
-        run: pytest
+        run: FORCE_CPU=1 uv run pytest

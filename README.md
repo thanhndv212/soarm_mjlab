@@ -11,9 +11,31 @@ training run → sim2real deployment).
 
 ## Install
 
+Uses [uv](https://docs.astral.sh/uv/) — not plain pip — because `mjlab` gates
+`torch` behind mutually-exclusive `cpu`/`cu128` extras routed to different
+package indices (CPU vs CUDA wheels), which `uv`'s `[tool.uv.sources]` handles
+natively; pip has no equivalent short of hand-juggling `--extra-index-url`.
+This is the one package in `soarm-ws` that installs this way — every other
+package there is plain `pip install -e .`, justified because none of them
+have a GPU/CPU dependency-variant problem.
+
 ```bash
-pip install -e .
-pip install -e ".[dev]"   # + pytest, ruff
+make sync-cpu   # dev machine without a GPU (or: uv sync --extra cpu --group dev)
+make sync       # GPU training box, CUDA 12.8 (or: uv sync --extra cu128 --group dev)
+```
+
+`uv.lock` is committed — it pins the full resolved dependency tree (not just
+`mjlab`/`mujoco-warp` directly), which is the actual reproducibility
+guarantee for RL checkpoints. CI runs `uv sync --locked`, which fails the
+build if the lockfile is stale relative to `pyproject.toml`.
+
+## Common tasks
+
+```bash
+make lint       # ruff check
+make test-cpu   # pytest, forcing CPU (mirrors mjlab's own tests/conftest.py convention)
+make test       # pytest on whatever device is available
+make check      # lint + test-cpu
 ```
 
 ## Why not the reference architecture's C++ deployment stack?
