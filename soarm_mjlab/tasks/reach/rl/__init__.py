@@ -1,1 +1,3 @@
-"""PPO runner config for the Reach task. Phase 1 — not implemented yet."""
+"""PPO runner for the Reach task."""
+
+from .runner import ReachOnPolicyRunner as ReachOnPolicyRunner

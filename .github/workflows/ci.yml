@@ -1,17 +1,30 @@
 name: CI
 
-# Two-job split per SOARM_MJLAB_ROADMAP.md Phase 3: this `fast` job (lint +
-# CPU-only tests) blocks merges. A `train-smoke` job (a few PPO iterations on
-# a tiny env, still CI-safe) is added in Phase 1 once scripts/train.py and
-# the Reach task exist — full GPU training never runs in CI.
+# Two-job split per SOARM_MJLAB_ROADMAP.md Phase 3 — different failure
+# semantics, so two jobs, not one:
+#
+# - `fast` (blocks merges): lint + the full CPU-only test pyramid, including
+#   test_train_smoke.py's own tiny (2-iteration) PPO run. Every push, every
+#   PR. Red here means the PR doesn't merge.
+# - `train-smoke` (never blocks merges): a longer-but-still-small PPO slice,
+#   on a schedule or manual dispatch only — never on push/pull_request, so
+#   it structurally can't gate a merge. Uploads the checkpoint + tensorboard
+#   log as a build artifact; a failure or reward-curve regression here is a
+#   signal to go look, not a merge blocker. Runs on ubuntu-latest (no GPU
+#   runner configured for this repo) — the roadmap's "GPU-capable runner if
+#   one exists" is conditional precisely because none does yet.
 
 on:
   push:
     branches: [main, master]
   pull_request:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily
+  workflow_dispatch:
 
 jobs:
   fast:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,3 +42,31 @@ jobs:
 
       - name: Test
         run: FORCE_CPU=1 uv run pytest
+
+  train-smoke:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Sync (cpu extra)
+        run: uv sync --locked --extra cpu --group dev
+
+      - name: Train (longer smoke slice — still CI-sized, not real training)
+        run: |
+          FORCE_CPU=1 uv run python scripts/train.py SoArm100-Reach \
+            --env.scene.num-envs=16 --agent.max-iterations=20 \
+            --gpu-ids None --agent.logger tensorboard
+
+      - name: Upload checkpoint + tensorboard log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: train-smoke-${{ github.run_id }}
+          path: logs/rsl_rl/so_arm100_reach/
+          retention-days: 14
