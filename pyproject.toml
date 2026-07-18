@@ -21,6 +21,11 @@ dependencies = [
     # explicit anyway as documented intent, same as mjlab's own `~=3.10.0`
     # tightened to an exact pin.
     "mujoco-warp==3.10.0.2",
+    # For scripts/push_to_hub.py — publishing a promoted checkpoint to the
+    # Hugging Face Hub. Not research-reproducibility-critical (an upload
+    # utility, not a physics/RL dependency), so left unpinned rather than
+    # hard-pinned like mjlab/mujoco-warp above.
+    "huggingface_hub>=0.24.0",
 ]
 
 classifiers = [

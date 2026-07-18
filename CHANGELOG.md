@@ -60,3 +60,24 @@
   traceability (fully-resolved `env.yaml`/`agent.yaml` + git commit
   hash/diff in the log directory) was already wired up in `scripts/train.py`
   since Phase 1; nothing new needed there.
+- Phase 4 tooling (the run itself is manual/GPU, not something to script):
+  `docs/vast_ai_training.md`, a full step-by-step guide for training on a
+  rented vast.ai GPU with W&B tracking and playing the checkpoint back
+  locally, and `scripts/setup_remote.sh`, a one-time setup script for a
+  fresh box (installs `uv`, clones this repo, `uv sync --extra cu128`).
+  `ReachOnPolicyRunner` now also uploads the ONNX export to the active W&B
+  run (the `.pt` checkpoint was already auto-uploaded by rsl_rl's own
+  `WandbLogWriter`), so both artifacts are retrievable from a W&B run path
+  alone via `scripts/play.py --wandb-run-path` — no manual `scp` needed
+  between the training box and a dev machine.
+- `scripts/push_to_hub.py`: publishes a promoted checkpoint to the Hugging
+  Face Hub — `policy.onnx` + `model.pt` + `env.yaml`/`agent.yaml` + a
+  generated model card (training provenance: iterations, `num_envs`, git
+  commit, W&B run link) to a model repo. Takes the checkpoint from a local
+  run directory or a W&B run path. Deliberately a separate, manual command
+  rather than automatic on every checkpoint — matches the roadmap's
+  promotion-gate philosophy (`docs/vast_ai_training.md` step 10). Adds
+  `huggingface_hub` as a dependency (unpinned — an upload utility, not a
+  physics/RL dependency, unlike the hard-pinned `mjlab`/`mujoco-warp`).
+  `tests/test_push_to_hub.py` covers the pure logic (model card rendering,
+  checkpoint/run-dir resolution) with no network calls.
