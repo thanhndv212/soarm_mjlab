@@ -115,16 +115,27 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
     rewards = {
         "distance_to_target": RewardTermCfg(
             func=mdp.distance_to_target,
-            weight=1.0,
+            weight=2.0,
             params={
                 "command_name": "ee_pose",
+                "orientation_weight": 0.5,
+                "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
+            },
+        ),
+        "distance_to_target_shaped": RewardTermCfg(
+            func=mdp.distance_to_target_shaped,
+            weight=5.0,
+            params={
+                "command_name": "ee_pose",
+                "sigma": 0.15,
+                "orientation_weight": 0.5,
                 "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
             },
         ),
         "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.01),
         "joint_pos_limits": RewardTermCfg(
             func=mdp.joint_pos_limits,
-            weight=-10.0,
+            weight=-1.0,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
         ),
     }
@@ -133,10 +144,6 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
         "time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
         "task_success": TerminationTermCfg(
             func=mdp.task_success, params={"command_name": "ee_pose"}
-        ),
-        "joint_limit_violated": TerminationTermCfg(
-            func=mdp.joint_limit_violated,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
         ),
         "ee_ground_collision": TerminationTermCfg(
             func=illegal_contact,
@@ -177,5 +184,5 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
             ),
         ),
         decimation=4,
-        episode_length_s=6.0,
+        episode_length_s=10.0,
     )

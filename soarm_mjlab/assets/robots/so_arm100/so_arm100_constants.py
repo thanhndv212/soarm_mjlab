@@ -116,10 +116,10 @@ HOME_KEYFRAME = EntityCfg.InitialStateCfg(
     pos=(0.0, 0.0, 0.03),
     joint_pos={
         "shoulder_pan": 0.0,
-        "shoulder_lift": -1.57,
-        "elbow_flex": 1.57,
-        "wrist_flex": 1.57,
-        "wrist_roll": -1.57,
+        "shoulder_lift": -0.3,
+        "elbow_flex": 0.5,
+        "wrist_flex": 0.0,
+        "wrist_roll": 0.0,
         "gripper": 0.0,
     },
     joint_vel={".*": 0.0},
@@ -166,10 +166,18 @@ def get_so_arm100_robot_cfg() -> EntityCfg:
     )
 
 
-# 0.25 * effort_limit / stiffness, same convention as mjlab's YAM_ACTION_SCALE:
-# a fraction of the actuator's full command authority per unit action.
+# Per-joint action scale (rad per action unit). The previous formula
+# (0.25 * effort_limit / stiffness = 0.000736 rad) was so small the policy
+# could only move joints 0.04 deg per step -- physically impossible to reach
+# targets 10-47cm away. These values give the policy meaningful control
+# authority while staying within joint limits from the home keyframe.
 SO_ARM100_ACTION_SCALE: dict[str, float] = {
-    name: 0.25 * STS3215_EFFORT_LIMIT / STS3215_STIFFNESS for name in JOINT_NAMES
+    "shoulder_pan": 1.0,
+    "shoulder_lift": 1.0,
+    "elbow_flex": 1.0,
+    "wrist_flex": 1.0,
+    "wrist_roll": 1.0,
+    "gripper": 0.15,
 }
 
 
