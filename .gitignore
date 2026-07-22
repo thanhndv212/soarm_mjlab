@@ -13,3 +13,4 @@ wandb/
 outputs/
 *.onnx
 *.pt
+.env
