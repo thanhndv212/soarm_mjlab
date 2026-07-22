@@ -14,6 +14,7 @@ from mjlab.sensor import ContactSensorCfg
 from soarm_mjlab.assets.robots import SO_ARM100_ACTION_SCALE, get_so_arm100_robot_cfg
 from soarm_mjlab.assets.robots.so_arm100.so_arm100_constants import (
     EE_SITE_NAME,
+    HOME_KEYFRAME,
     get_spec,
 )
 from soarm_mjlab.tasks.reach.mdp import UniformPoseCommandCfg
@@ -46,11 +47,20 @@ def _compute_reachable_workspace(
     data = mujoco.MjData(model)
     site_id = model.site(EE_SITE_NAME).id
 
-    joint_ranges = np.array([j.range for j in spec.joints])
+    # Sample within the policy's actual achievable range (home +/- action
+    # scale), not the full hard joint-limit range. Sampling from the full
+    # range produces targets the policy can never reach given its action
+    # scale, so position error plateaus regardless of training quality.
+    joint_lo = np.zeros(len(spec.joints))
+    joint_hi = np.zeros(len(spec.joints))
+    for i, j in enumerate(spec.joints):
+        home = HOME_KEYFRAME.joint_pos.get(j.name, 0.0)
+        scale = SO_ARM100_ACTION_SCALE.get(j.name, 0.5)
+        joint_lo[i] = max(j.range[0], home - scale)
+        joint_hi[i] = min(j.range[1], home + scale)
+
     rng = np.random.default_rng(seed)
-    samples = rng.uniform(
-        joint_ranges[:, 0], joint_ranges[:, 1], size=(num_samples, len(spec.joints))
-    )
+    samples = rng.uniform(joint_lo, joint_hi, size=(num_samples, len(spec.joints)))
 
     positions = np.zeros((num_samples, 3))
     for i in range(num_samples):

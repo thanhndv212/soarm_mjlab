@@ -127,7 +127,7 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
             weight=5.0,
             params={
                 "command_name": "ee_pose",
-                "sigma": 0.15,
+                "sigma": 0.10,
                 "orientation_weight": 0.5,
                 "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
             },
