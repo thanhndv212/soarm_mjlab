@@ -5,11 +5,10 @@ deployed through `soarm_sdk.RobotInterface` — the same interface real-hardware
 control already uses, so a trained policy doesn't care whether it's driving
 simulation or a physical arm.
 
-Status: Phases 0–3 done (repo scaffolding, the "Reach" sample task, a
-CI-safe test pyramid, CI/CD). Phase 4 (a real training run) is next — see
-`SOARM_MJLAB_ROADMAP.md` in the `soarm-ws` root for the full phased plan,
-and `docs/vast_ai_training.md` for a step-by-step guide to running it on a
-rented GPU.
+The Reach policy has been trained end-to-end on
+a rented vast.ai GPU and played back locally — see
+`docs/vast_ai_training.md` for the step-by-step guide to running training
+on a rented GPU.
 
 ## Install
 
@@ -46,6 +45,24 @@ then publish a promoted checkpoint (ONNX + config + model card) to the
 Hugging Face Hub — see `docs/vast_ai_training.md` for the full walkthrough
 (instance selection, cost, monitoring, retrieving the checkpoint, the
 promotion bar to clear before publishing).
+
+### Testing a trained checkpoint
+
+`scripts/play.py` loads a checkpoint straight from its W&B run (no manual
+`scp`) and rolls it out in sim — a native MuJoCo window if a display is
+available, or `--video` to save an mp4 headless:
+
+```bash
+uv run python scripts/play.py SoArm100-Reach \
+    --wandb-run-path thanhndv212-thanh-nguyen/mjlab/y4bomfz3
+```
+
+`--no-terminations` watches full rollouts without early episode cutoffs;
+`--agent zero`/`--agent random` swap in a dummy policy to sanity-check the
+env itself independent of any checkpoint. See
+`docs/reach_training_debug_log_v1_v11.md` for the tuning history behind the
+current best checkpoint (v9: ~30% success, ~0.04m position error) and the
+open leads for pushing past that plateau.
 
 ## Common tasks
 
