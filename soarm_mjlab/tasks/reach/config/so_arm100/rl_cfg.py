@@ -11,7 +11,11 @@ def so_arm100_reach_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
             obs_normalization=True,
             distribution_cfg={
                 "class_name": "GaussianDistribution",
-                "init_std": 0.3,
+                # Higher than v9's 0.3: the residual is already scaled down
+                # by residual_scale (0.1 rad), so the raw policy output needs
+                # more initial exploration range to produce meaningful
+                # corrections during early training.
+                "init_std": 0.5,
                 "std_type": "scalar",
             },
         ),

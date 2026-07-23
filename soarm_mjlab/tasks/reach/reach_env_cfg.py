@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.action_manager import ActionTermCfg
 from mjlab.managers.command_manager import CommandTermCfg
 from mjlab.managers.curriculum_manager import CurriculumTermCfg
@@ -21,6 +20,7 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
 from soarm_mjlab.tasks.reach import mdp
 from soarm_mjlab.tasks.reach.mdp import UniformPoseCommandCfg
+from soarm_mjlab.tasks.reach.mdp.actions import ResidualIKActionCfg
 
 
 def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
@@ -58,11 +58,13 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
     }
 
     actions: dict[str, ActionTermCfg] = {
-        "joint_pos": JointPositionActionCfg(
+        "joint_pos": ResidualIKActionCfg(
             entity_name="robot",
             actuator_names=(".*",),
-            scale=0.5,  # Override per-robot.
-            use_default_offset=True,
+            frame_type="site",
+            frame_name="",  # Set per-robot.
+            command_name="ee_pose",
+            residual_scale=0.1,  # Override per-robot.
         )
     }
 

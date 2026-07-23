@@ -180,6 +180,23 @@ SO_ARM100_ACTION_SCALE: dict[str, float] = {
     "gripper": 0.15,
 }
 
+# Per-joint residual scale (rad) for ResidualIKAction. Much smaller than
+# SO_ARM100_ACTION_SCALE because the DLS IK base controller handles coarse
+# motion toward the target — the residual is only for fine corrections
+# (IK imperfections, joint-limit edge cases, dynamic effects). The policy
+# output is clipped to [-1, 1] by rl_cfg's clip_actions, then scaled by
+# these values, so the max per-step residual is ±0.1 rad (arm) / ±0.05
+# (gripper) — enough for fine positioning, not enough to override the
+# base controller's coarse motion.
+SO_ARM100_RESIDUAL_SCALE: dict[str, float] = {
+    "shoulder_pan": 0.1,
+    "shoulder_lift": 0.1,
+    "elbow_flex": 0.1,
+    "wrist_flex": 0.1,
+    "wrist_roll": 0.1,
+    "gripper": 0.05,
+}
+
 
 if __name__ == "__main__":
     import mujoco.viewer as viewer

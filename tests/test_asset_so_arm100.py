@@ -26,6 +26,7 @@ from soarm_mjlab.tasks.reach.config.so_arm100.env_cfgs import (
     so_arm100_reach_env_cfg,
 )
 from soarm_mjlab.tasks.reach.mdp import UniformPoseCommandCfg
+from soarm_mjlab.tasks.reach.mdp.actions import ResidualIKActionCfg
 
 
 def test_mjcf_compiles_with_actuators_stripped():
@@ -104,8 +105,10 @@ def test_reach_env_cfg_placeholders_are_filled(play):
     assert command_cfg.asset_cfg.site_names == (EE_SITE_NAME,)
 
     joint_pos_action = cfg.actions["joint_pos"]
-    assert isinstance(joint_pos_action.scale, dict)
-    assert set(joint_pos_action.scale.keys()) == set(JOINT_NAMES)
+    assert isinstance(joint_pos_action, ResidualIKActionCfg)
+    assert joint_pos_action.frame_name == EE_SITE_NAME
+    assert isinstance(joint_pos_action.residual_scale, dict)
+    assert set(joint_pos_action.residual_scale.keys()) == set(JOINT_NAMES)
 
     assert cfg.viewer.body_name != ""
 
