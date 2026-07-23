@@ -107,8 +107,10 @@ def test_reach_env_cfg_placeholders_are_filled(play):
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, ResidualIKActionCfg)
     assert joint_pos_action.frame_name == EE_SITE_NAME
-    assert isinstance(joint_pos_action.residual_scale, dict)
-    assert set(joint_pos_action.residual_scale.keys()) == set(JOINT_NAMES)
+    # v13: goal-perturbation task-space residual (not per-joint).
+    assert joint_pos_action.residual_mode == "goal"
+    assert joint_pos_action.residual_pos_scale > 0
+    assert joint_pos_action.residual_rot_scale > 0
 
     assert cfg.viewer.body_name != ""
 

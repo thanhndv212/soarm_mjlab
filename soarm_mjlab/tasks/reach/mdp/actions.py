@@ -1,24 +1,37 @@
-"""Residual IK action: DLS IK base controller + learned joint-space residual.
+"""Residual IK action: DLS IK base controller + learned residual.
 
 Reformulates the Reach action space from "policy commands joint positions
 directly" to "policy commands a small correction on top of an analytic IK
 base controller." The base controller computes a damped-least-squares (DLS)
 IK step toward the commanded target pose every step (GPU-vectorized via
-``mujoco_warp.jac``), and the policy's output is a per-joint residual
-added on top:
+``mujoco_warp.jac``).
+
+Two residual modes are supported:
+
+**``residual_mode="joint"`` (v12, additive joint-space):**
 
     q_target = q_current + dq_base_ik + dq_residual
 
-This shrinks the learning problem from "learn the full joint-angle →
-EE-pose mapping" to "learn small corrections on top of an IK base," which
-is a much smaller function to fit — the analytic controller handles the
-coarse reaching, the policy handles fine corrections and edge cases.
+The policy outputs a per-joint residual added on top of the IK step. Near
+the target, ``dq_base ≈ 0`` while ``dq_residual`` is not small relative to
+it → the residual fights the base controller → oscillation/shake. PPO's
+only improving direction is "shrink the residual," which degrades
+positioning.
+
+**``residual_mode="goal"`` (v13, goal-perturbation task-space):**
+
+    commanded_pose = target_pose + residual_pose_delta
+    dq = DLS_IK(commanded_pose, current_pose)
+    q_target = q_current + dq
+
+The policy outputs a 6-D pose delta (3 position + 3 rotation) that
+**perturbs the goal the IK aims at**. The IK just tracks the perturbed
+goal — the residual no longer fights the controller, it steers it. Near
+the target: the residual moves the equilibrium point, the IK settles
+there smoothly. No shake by construction.
 
 The Jacobian/DLS machinery is identical to mjlab's own
-``DifferentialIKAction`` (``mjlab.envs.mdp.actions.differential_ik``);
-this action term differs in that the IK target is the *command target*
-(not the policy output), and the policy output is a joint-space residual
-(not a task-space command).
+``DifferentialIKAction`` (``mjlab.envs.mdp.actions.differential_ik``).
 """
 
 from __future__ import annotations
@@ -34,6 +47,7 @@ from mjlab.managers.action_manager import ActionTerm, ActionTermCfg
 from mjlab.utils.lab_api.math import (
     combine_frame_transforms,
     compute_pose_error,
+    quat_box_plus,
     quat_from_matrix,
 )
 from mjlab.utils.lab_api.string import resolve_matching_names_values
@@ -93,11 +107,38 @@ class ResidualIKActionCfg(ActionTermCfg):
 
     # -- Residual params --
 
+    residual_mode: Literal["joint", "goal"] = "joint"
+    """How the policy residual composes with the IK base controller.
+
+    ``"joint"`` (v12): additive joint-space — the policy outputs a
+    per-joint residual added to the IK step
+    (``q = q_cur + dq_base + dq_residual``). Near the target the
+    residual fights the base controller → oscillation.
+
+    ``"goal"`` (v13): goal-perturbation task-space — the policy outputs
+    a 6-D pose delta (3 position + 3 rotation) that perturbs the IK
+    goal (``commanded = target + delta; q = q_cur + DLS_IK(commanded)``).
+    The residual steers the IK instead of fighting it → no shake.
+    """
+
     residual_scale: float | dict[str, float] = 0.1
-    """Per-joint scale (rad) for the policy's residual output. Float or
-    dict mapping joint names to scales. Much smaller than the old
-    ``JointPositionAction`` scale (1.0 rad) because the base controller
-    handles coarse motion — the residual is only for fine corrections."""
+    """Per-joint scale (rad) for the policy's residual output in ``"joint"``
+    mode. Float or dict mapping joint names to scales. Much smaller than the
+    old ``JointPositionAction`` scale (1.0 rad) because the base controller
+    handles coarse motion — the residual is only for fine corrections.
+    Ignored in ``"goal"`` mode."""
+
+    residual_pos_scale: float = 0.02
+    """Position delta scale (meters) for the policy's residual output in
+    ``"goal"`` mode. The policy commands ``action[:, :3] * residual_pos_scale``
+    as a world-frame position perturbation on the IK target. Ignored in
+    ``"joint"`` mode."""
+
+    residual_rot_scale: float = 0.05
+    """Orientation delta scale (rad) for the policy's residual output in
+    ``"goal"`` mode. The policy commands ``action[:, 3:6] * residual_rot_scale``
+    as a rotation-vector perturbation on the IK target's orientation (applied
+    via SO(3) box-plus). Ignored in ``"joint"`` mode."""
 
     frozen_joints: dict[str, float] | None = None
     """Optional joint-name -> fixed target (rad) overrides, applied after
@@ -113,17 +154,22 @@ class ResidualIKActionCfg(ActionTermCfg):
 
 
 class ResidualIKAction(ActionTerm):
-    """DLS IK base controller + learned joint-space residual.
+    """DLS IK base controller + learned residual (joint-space or goal-perturbation).
 
     Every step:
     1. Reads the target pose from the command manager (base frame) and
        converts it to world frame via the robot's root pose.
-    2. Computes the pose error between the current EE frame and the target.
+    2. Computes the pose error between the current EE frame and the target
+       (or the perturbed target in ``"goal"`` mode).
     3. Solves a damped-least-squares IK step (``dq_base``) using the
        GPU-vectorized Jacobian from ``mujoco_warp.jac``.
-    4. Adds the policy's residual (``dq_residual = action * residual_scale``).
-    5. Sets the joint position target to ``q_current + dq_base + dq_residual``,
-       clamped to soft joint limits.
+    4. In ``"joint"`` mode: adds the policy's per-joint residual
+       (``dq_residual = action * residual_scale``) and sets
+       ``q_target = q_current + dq_base + dq_residual``.
+       In ``"goal"`` mode: the policy's 6-D pose delta perturbs the IK goal
+       (``commanded = target + delta``), the IK step tracks the perturbed
+       goal, and ``q_target = q_current + dq_base`` (no joint residual).
+    5. Clamps to soft joint limits and applies frozen-joint overrides.
     """
 
     cfg: ResidualIKActionCfg
@@ -145,8 +191,11 @@ class ResidualIKAction(ActionTerm):
         self._frame_type = cfg.frame_type
         self._resolve_frame(cfg.frame_name)
 
-        # -- Action dim = num_joints (policy outputs joint-space residuals) --
-        self._action_dim = self._num_joints
+        # -- Action dim: num_joints (joint mode) or 6 (goal mode: 3 pos + 3 rot)
+        if cfg.residual_mode == "goal":
+            self._action_dim = 6
+        else:
+            self._action_dim = self._num_joints
         self._raw_actions = torch.zeros(
             self.num_envs, self._action_dim, device=self.device
         )
@@ -165,9 +214,18 @@ class ResidualIKAction(ActionTerm):
                     q_target[:, j] = val
         self._posture_target = q_target
 
-        # -- Residual scale (float or per-joint dict) --
-        if isinstance(cfg.residual_scale, (float, int)):
-            self._residual_scale: float | torch.Tensor = float(cfg.residual_scale)
+        # -- Residual scale --
+        if cfg.residual_mode == "goal":
+            # Goal mode: pose-space scales (pos in meters, rot in rad).
+            # _residual_scale stores [pos_scale, rot_scale] for ONNX metadata.
+            self._residual_scale = [
+                float(cfg.residual_pos_scale),
+                float(cfg.residual_rot_scale),
+            ]
+            self._residual_pos_scale = float(cfg.residual_pos_scale)
+            self._residual_rot_scale = float(cfg.residual_rot_scale)
+        elif isinstance(cfg.residual_scale, (float, int)):
+            self._residual_scale = float(cfg.residual_scale)
         elif isinstance(cfg.residual_scale, dict):
             scale = torch.ones(
                 self.num_envs, self._num_joints, device=self.device
@@ -180,7 +238,7 @@ class ResidualIKAction(ActionTerm):
         else:
             raise ValueError(
                 f"Unsupported residual_scale type: {type(cfg.residual_scale)}. "
-                "Supported: float or dict."
+                "Supported: float or dict (joint mode)."
             )
 
         # -- Frozen-joint overrides (play/deploy only, see cfg docstring) --
@@ -243,18 +301,36 @@ class ResidualIKAction(ActionTerm):
         # 2. Current EE frame pose (world frame).
         frame_pos, frame_quat = self._get_frame_pose()
 
-        # 3. Pose error → IK residual.
+        # 3. Determine the pose the IK base controller will aim at.
+        if self.cfg.residual_mode == "goal":
+            # Goal-perturbation: the policy's 6-D output perturbs the IK
+            # target. The IK tracks the perturbed goal; the residual steers
+            # the IK instead of fighting it (no adversarial closed loop).
+            # The reward still measures distance to the *true* target (the
+            # command manager's ee_pose), not this perturbed goal — the
+            # two-target wiring is entirely inside this action term.
+            residual_pos = self._raw_actions[:, :3] * self._residual_pos_scale
+            residual_rot = self._raw_actions[:, 3:6] * self._residual_rot_scale
+            ik_target_pos = target_pos_w + residual_pos
+            ik_target_quat = quat_box_plus(target_quat_w, residual_rot)
+        else:
+            # Joint-space additive: IK aims at the true target; the
+            # residual is added in joint space after the IK step.
+            ik_target_pos = target_pos_w
+            ik_target_quat = target_quat_w
+
+        # 4. Pose error → IK residual.
         pos_error, rot_error = compute_pose_error(
-            frame_pos, frame_quat, target_pos_w, target_quat_w
+            frame_pos, frame_quat, ik_target_pos, ik_target_quat
         )
 
-        # 4. Jacobian (GPU-vectorized via mujoco_warp).
+        # 5. Jacobian (GPU-vectorized via mujoco_warp).
         self._point_torch[:] = frame_pos
         self._compute_jacobian()
         jacp = self._jacp_torch[:, :, self._joint_dof_ids]
         jacr = self._jacr_torch[:, :, self._joint_dof_ids]
 
-        # 5. DLS normal equations: (J^T W J + λ²I) dq = J^T W dx.
+        # 6. DLS normal equations: (J^T W J + λ²I) dq = J^T W dx.
         #    Same formulation as DifferentialIKAction.compute_dq.
         w_pos = self.cfg.position_weight
         w_ori = self.cfg.orientation_weight
@@ -293,12 +369,15 @@ class ResidualIKAction(ActionTerm):
         dq_base = torch.linalg.solve(JTJ, JTdx)
         dq_base = dq_base.clamp(-self.cfg.max_dq, self.cfg.max_dq)
 
-        # 6. Policy residual.
-        dq_residual = self._raw_actions * self._residual_scale
-
-        # 7. Final joint target: current + base IK + residual, clamped.
+        # 7. Final joint target.
         q_current = self._entity.data.joint_pos[:, self._joint_ids]
-        q_target = q_current + dq_base + dq_residual
+        if self.cfg.residual_mode == "goal":
+            # Goal mode: IK tracks the perturbed goal — no joint residual.
+            q_target = q_current + dq_base
+        else:
+            # Joint mode: add the per-joint policy residual.
+            dq_residual = self._raw_actions * self._residual_scale
+            q_target = q_current + dq_base + dq_residual
         q_target = q_target.clamp(self._joint_lower, self._joint_upper)
 
         # 8. Frozen-joint overrides (play/deploy only — see cfg docstring).

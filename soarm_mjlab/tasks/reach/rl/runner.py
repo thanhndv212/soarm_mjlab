@@ -97,10 +97,18 @@ def _get_reach_metadata(
         observation_term_history_length.append(cfg.history_length)
 
     residual_scale = joint_action._residual_scale
-    action_scale = (
-        residual_scale[0].cpu().tolist()
-        if isinstance(residual_scale, torch.Tensor)
-        else residual_scale
+    if isinstance(residual_scale, torch.Tensor):
+        action_scale = residual_scale[0].cpu().tolist()
+    elif isinstance(residual_scale, list):
+        # Goal mode: [pos_scale, rot_scale]
+        action_scale = residual_scale
+    else:
+        action_scale = residual_scale
+
+    action_space = (
+        "residual_ik_goal"
+        if joint_action.cfg.residual_mode == "goal"
+        else "residual_ik"
     )
 
     return {
@@ -116,7 +124,7 @@ def _get_reach_metadata(
         "observation_terms_history_length": observation_term_history_length,
         "observation_terms_clip": observation_term_clip,
         "action_scale": action_scale,
-        "action_space": "residual_ik",
+        "action_space": action_space,
     }
 
 

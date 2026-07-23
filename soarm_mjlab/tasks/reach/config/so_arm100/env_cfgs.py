@@ -14,7 +14,8 @@ from soarm_mjlab.assets.robots import get_so_arm100_robot_cfg
 from soarm_mjlab.assets.robots.so_arm100.so_arm100_constants import (
     EE_SITE_NAME,
     SO_ARM100_GRIPPER_CLOSED_RAD,
-    SO_ARM100_RESIDUAL_SCALE,
+    SO_ARM100_RESIDUAL_POS_SCALE,
+    SO_ARM100_RESIDUAL_ROT_SCALE,
     get_spec,
 )
 from soarm_mjlab.tasks.reach.mdp import UniformPoseCommandCfg
@@ -88,7 +89,14 @@ def so_arm100_reach_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     joint_pos_action = cfg.actions["joint_pos"]
     assert isinstance(joint_pos_action, ResidualIKActionCfg)
     joint_pos_action.frame_name = EE_SITE_NAME
-    joint_pos_action.residual_scale = SO_ARM100_RESIDUAL_SCALE
+    # v13: goal-perturbation task-space residual. The policy outputs a 6-D
+    # pose delta (3 position + 3 rotation) that perturbs the IK target,
+    # instead of a per-joint residual added to the IK step. This eliminates
+    # the adversarial base/residual closed loop that caused v12's shake and
+    # PPO degradation — the residual steers the IK instead of fighting it.
+    joint_pos_action.residual_mode = "goal"
+    joint_pos_action.residual_pos_scale = SO_ARM100_RESIDUAL_POS_SCALE
+    joint_pos_action.residual_rot_scale = SO_ARM100_RESIDUAL_ROT_SCALE
 
     ee_site_cfg = SceneEntityCfg("robot", site_names=(EE_SITE_NAME,))
 

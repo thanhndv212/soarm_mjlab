@@ -209,6 +209,18 @@ SO_ARM100_RESIDUAL_SCALE: dict[str, float] = {
 # distracting from watching the arm's reach behavior.
 SO_ARM100_GRIPPER_CLOSED_RAD: float = -0.1745
 
+# Goal-perturbation residual scales (v13, ``residual_mode="goal"``).
+# The policy outputs a 6-D pose delta: action[:, :3] * pos_scale (meters) +
+# action[:, 3:6] * rot_scale (rad). These are the max per-step perturbations
+# the policy can apply to the IK target — small enough that the IK base
+# controller remains the dominant motion source, large enough to compensate
+# for systematic IK reaching error (joint-limit gaps, DLS damping bias).
+# The policy output is clipped to [-1, 1] by rl_cfg's clip_actions, so the
+# max position perturbation is ±2 cm and the max rotation perturbation is
+# ±0.05 rad (~2.9°).
+SO_ARM100_RESIDUAL_POS_SCALE: float = 0.02
+SO_ARM100_RESIDUAL_ROT_SCALE: float = 0.05
+
 
 if __name__ == "__main__":
     import mujoco.viewer as viewer
