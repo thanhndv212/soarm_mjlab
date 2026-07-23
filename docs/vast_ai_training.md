@@ -57,7 +57,22 @@ pick:
   preempted. Fine for this task since checkpoints save every
   `save_interval` iterations (100, see `rl_cfg.py`) and training resumes
   from the last one with `--agent.resume` — but if you'd rather not deal
-  with resuming, pick on-demand.
+  with resuming, pick on-demand. **Preemption can be indefinite**: a
+  `vastai start instance <id>` on a preempted interruptible instance can
+  queue with "resources currently unavailable... could take anywhere from
+  hours to weeks" — don't wait it out. Rent a fresh instance instead (the
+  old one's data isn't needed here since `soarm_mjlab` is self-contained
+  and re-clones/re-syncs in minutes) and `vastai destroy instance <id> -y`
+  the stuck one once you've confirmed you don't need anything off its disk.
+- **Check `disk_bw` (disk bandwidth) when comparing offers**, not just
+  price/GPU: `uv sync --extra cu128` downloads/unpacks several GB of
+  torch+CUDA wheels, and a host with low `disk_bw` (some sub-1GB/s hosts
+  exist despite advertising fast network) can make that step take 30+
+  minutes even on a fast internet link, because unpacking is disk-bound,
+  not network-bound. `vastai search offers` includes `disk_bw` — prefer
+  hosts with several GB/s if `uv sync` is taking unexpectedly long; a
+  ~$0.10–0.15/hr price difference is negligible next to 20+ minutes of
+  idle GPU billing waiting on package unpacking.
 
 None of the above is benchmarked against actual `mujoco_warp` throughput on
 these cards for this task — our own runs so far were all CPU-only at tiny
@@ -79,10 +94,29 @@ use their web terminal). Something like:
 ssh -p <PORT> root@<HOST>
 ```
 
-## 3. One-time setup
+## 3. One-time setup (+ automated W&B auth)
 
-Run the setup script from the repo (installs `uv`, clones `soarm_mjlab`,
-syncs the `cu128` extra):
+Renting a fresh instance is common — the previous rental's disk (and its
+`wandb login` session) is gone once it's destroyed, and a slow/oversubscribed
+host is often worth abandoning for a faster one mid-setup (see
+"Picking a fast host" below). To avoid re-doing `wandb login` by hand every
+time, pipe your **local** machine's W&B API key into the setup script over
+SSH — the key never touches disk on the remote box outside `~/.netrc`
+(the same file `wandb login` itself would write), and isn't committed
+anywhere:
+
+```bash
+# On the Mac (already has ~/.netrc from being logged in locally):
+WANDB_API_KEY=$(grep -A2 api.wandb.ai ~/.netrc | grep password | awk '{print $2}')
+ssh -p <PORT> root@<HOST> "WANDB_API_KEY=$WANDB_API_KEY bash -s" < scripts/setup_remote.sh
+```
+
+This installs `uv`, clones `soarm_mjlab`, syncs the `cu128` extra, **and**
+runs `wandb login` non-interactively when `WANDB_API_KEY` is set — one SSH
+round-trip covers the whole one-time setup, no manual paste step.
+
+Without the env var (or via the one-liner `curl` form), the script skips
+W&B auth and step 4 below is still manual:
 
 ```bash
 curl -LsSf https://raw.githubusercontent.com/thanhndv212/soarm_mjlab/main/scripts/setup_remote.sh | bash
@@ -99,6 +133,9 @@ uv sync --locked --extra cu128 --group dev
 ```
 
 ## 4. Authenticate W&B
+
+Skip this if you used the `WANDB_API_KEY` one-liner in step 3 — it already
+ran this.
 
 ```bash
 uv run wandb login
