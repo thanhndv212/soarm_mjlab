@@ -16,11 +16,11 @@ dependencies = [
     # Hard-pinned, not >=: both are fast-moving research libraries, and an
     # unpinned upgrade silently changing physics/API breaks reproducibility
     # of existing checkpoints. Verified installable together on macOS arm64
-    # (2026-07-14) — re-pin deliberately, not by drifting with `pip install -U`.
+    # (2026-07-23) — re-pin deliberately, not by drifting with `pip install -U`.
     # uv.lock pins the full resolved tree on top of this; these two are kept
     # explicit anyway as documented intent, same as mjlab's own `~=3.10.0`
     # tightened to an exact pin.
-    "mujoco-warp==3.10.0.2",
+    "mujoco-warp==3.10.0.3",
     # For scripts/push_to_hub.py — publishing a promoted checkpoint to the
     # Hugging Face Hub. Not research-reproducibility-critical (an upload
     # utility, not a physics/RL dependency), so left unpinned rather than
@@ -45,8 +45,8 @@ keywords = ["soarm", "mjlab", "mujoco", "reinforcement-learning", "robotics", "m
 # just pulled transitively via mjlab[...]) because uv requires the package
 # named in [tool.uv.sources]'s extra= to appear directly in that extra's
 # dependency list. Mutually exclusive: see [tool.uv.conflicts] below.
-cpu = ["mjlab[cpu]==1.5.0", "torch>=2.7.0"]
-cu128 = ["mjlab[cu128]==1.5.0", "torch>=2.7.0"]
+cpu = ["mjlab[cpu]==1.5.3", "torch>=2.7.0"]
+cu128 = ["mjlab[cu128]==1.5.3", "torch>=2.7.0"]
 
 [project.urls]
 Homepage = "https://github.com/thanhndv212/soarm_mjlab"

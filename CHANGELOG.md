@@ -81,3 +81,16 @@
   physics/RL dependency, unlike the hard-pinned `mjlab`/`mujoco-warp`).
   `tests/test_push_to_hub.py` covers the pure logic (model card rendering,
   checkpoint/run-dir resolution) with no network calls.
+
+### Removed
+
+- `_mjlab_compat` shim: the upstream bug it worked around
+  ([mujocolab/mjlab#1091](https://github.com/mujocolab/mjlab/pull/1091))
+  shipped in `mjlab` v1.5.1. Bumped pins to `mjlab==1.5.3` /
+  `mujoco-warp==3.10.0.3` (the latest release, which also fixes a
+  multi-env domain-randomization crash and CUDA 700 crashes from mass
+  domain randomization on some GPU architectures — both relevant given the
+  large `num_envs` runs in `docs/reach_training_debug_log_v1_v11.md`) and
+  deleted the shim + its import in `soarm_mjlab/tasks/__init__.py`.
+  Verified: full test suite (32 tests, `num_envs=2`, the exact case the
+  shim guarded) passes on macOS arm64 CPU with the shim gone.
