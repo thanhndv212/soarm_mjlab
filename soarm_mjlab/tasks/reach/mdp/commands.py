@@ -12,6 +12,7 @@ from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.utils.lab_api.math import (
     combine_frame_transforms,
+    matrix_from_quat,
     quat_from_euler_xyz,
     sample_uniform,
     subtract_frame_transforms,
@@ -120,12 +121,21 @@ class UniformPoseCommand(CommandTerm):
 
         root_pos_w = self.robot.data.root_link_pos_w
         root_quat_w = self.robot.data.root_link_quat_w
-        target_pos_w, _ = combine_frame_transforms(
+        target_pos_w, target_quat_w = combine_frame_transforms(
             root_pos_w,
             root_quat_w,
             self.pose_command_b[:, :3],
             self.pose_command_b[:, 3:7],
         )
+        target_rotm = matrix_from_quat(target_quat_w).cpu().numpy()
+
+        asset_cfg = self.cfg.asset_cfg
+        ee_pos_w = self.robot.data.site_pos_w[:, asset_cfg.site_ids].squeeze(1)
+        ee_quat_w = self.robot.data.site_quat_w[:, asset_cfg.site_ids].squeeze(1)
+        ee_rotm = matrix_from_quat(ee_quat_w).cpu().numpy()
+
+        if self.cfg.viz.show_workspace:
+            self._draw_workspace_box(visualizer, env_indices, root_pos_w, root_quat_w)
 
         for batch in env_indices:
             color = (
@@ -138,6 +148,64 @@ class UniformPoseCommand(CommandTerm):
                 radius=0.02,
                 color=color,
                 label=f"reach_target_{batch}",
+            )
+            # Target EE pose (dashed-style default axis colors, larger scale
+            # so it's visually distinct from the "current" frame below).
+            visualizer.add_frame(
+                position=target_pos_w[batch].cpu().numpy(),
+                rotation_matrix=target_rotm[batch],
+                scale=0.08,
+                label=f"reach_target_frame_{batch}",
+            )
+            # Current EE pose — where the reach is actually happening. This
+            # is the frame to watch during play to see how well the policy
+            # (+ IK base controller, for ResidualIKAction) tracks position
+            # *and* orientation, not just the position-only success sphere.
+            visualizer.add_frame(
+                position=ee_pos_w[batch].cpu().numpy(),
+                rotation_matrix=ee_rotm[batch],
+                scale=0.12,
+                label=f"reach_ee_frame_{batch}",
+            )
+
+    def _draw_workspace_box(
+        self,
+        visualizer: DebugVisualizer,
+        env_indices,
+        root_pos_w: torch.Tensor,
+        root_quat_w: torch.Tensor,
+    ) -> None:
+        """Draw the target-position sampling range (``position_range``) as a
+        translucent box, in the robot base frame — i.e. the actual reachable
+        space targets are drawn from, not a general kinematic workspace.
+        """
+        r = self.cfg.position_range
+        center_b = torch.tensor(
+            [
+                (r.x[0] + r.x[1]) / 2,
+                (r.y[0] + r.y[1]) / 2,
+                (r.z[0] + r.z[1]) / 2,
+            ],
+            device=self.device,
+        )
+        half_extent = (
+            (r.x[1] - r.x[0]) / 2,
+            (r.y[1] - r.y[0]) / 2,
+            (r.z[1] - r.z[0]) / 2,
+        )
+        for batch in env_indices:
+            center_w, _ = combine_frame_transforms(
+                root_pos_w[batch : batch + 1],
+                root_quat_w[batch : batch + 1],
+                center_b.unsqueeze(0),
+            )
+            root_rotm = matrix_from_quat(root_quat_w[batch]).cpu().numpy()
+            visualizer.add_box(
+                center=center_w[0].cpu().numpy(),
+                size=half_extent,
+                mat=root_rotm,
+                color=self.cfg.viz.workspace_color,
+                label=f"reach_workspace_{batch}",
             )
 
 
@@ -174,6 +242,12 @@ class UniformPoseCommandCfg(CommandTermCfg):
     class VizCfg:
         target_color: tuple[float, float, float, float] = (1.0, 0.5, 0.0, 0.5)
         success_color: tuple[float, float, float, float] = (0.0, 1.0, 0.0, 0.5)
+        show_workspace: bool = False
+        """Draw the target-position sampling range (``position_range``) as
+        a translucent box. Off by default (adds visual clutter during
+        training-time debug_vis); enable for play to see the reachable
+        space the targets are drawn from."""
+        workspace_color: tuple[float, float, float, float] = (0.2, 0.4, 1.0, 0.25)
 
     viz: VizCfg = field(default_factory=VizCfg)
 

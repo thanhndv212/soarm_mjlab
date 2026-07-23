@@ -4,6 +4,9 @@ from soarm_mjlab.assets.robots.so_arm100.so_arm100_constants import (
     SO_ARM100_ACTION_SCALE as SO_ARM100_ACTION_SCALE,
 )
 from soarm_mjlab.assets.robots.so_arm100.so_arm100_constants import (
+    SO_ARM100_GRIPPER_CLOSED_RAD as SO_ARM100_GRIPPER_CLOSED_RAD,
+)
+from soarm_mjlab.assets.robots.so_arm100.so_arm100_constants import (
     SO_ARM100_RESIDUAL_SCALE as SO_ARM100_RESIDUAL_SCALE,
 )
 from soarm_mjlab.assets.robots.so_arm100.so_arm100_constants import (

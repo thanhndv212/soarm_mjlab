@@ -99,6 +99,15 @@ class ResidualIKActionCfg(ActionTermCfg):
     ``JointPositionAction`` scale (1.0 rad) because the base controller
     handles coarse motion — the residual is only for fine corrections."""
 
+    frozen_joints: dict[str, float] | None = None
+    """Optional joint-name -> fixed target (rad) overrides, applied after
+    the base IK + residual computation every step. Not used during
+    training (the Reach task only scores the EE pose, not the gripper, so
+    training leaves this ``None`` and the gripper follows whatever the base
+    controller + residual happen to produce for it). Set for play/deploy —
+    e.g. ``{"gripper": <closed_rad>}`` — so watching a rollout isn't
+    confused by an untrained, semantically-meaningless gripper motion."""
+
     def build(self, env: ManagerBasedRlEnv) -> ResidualIKAction:
         return ResidualIKAction(self, env)
 
@@ -173,6 +182,26 @@ class ResidualIKAction(ActionTerm):
                 f"Unsupported residual_scale type: {type(cfg.residual_scale)}. "
                 "Supported: float or dict."
             )
+
+        # -- Frozen-joint overrides (play/deploy only, see cfg docstring) --
+        self._frozen_mask: torch.Tensor | None = None
+        self._frozen_target: torch.Tensor | None = None
+        if cfg.frozen_joints is not None:
+            name_to_local = {name: i for i, name in enumerate(joint_names)}
+            mask = torch.zeros(self._num_joints, dtype=torch.bool, device=self.device)
+            target = torch.zeros(self._num_joints, device=self.device)
+            for name, value in cfg.frozen_joints.items():
+                if name not in name_to_local:
+                    raise ValueError(
+                        f"frozen_joints key {name!r} is not one of the "
+                        f"actuated joints controlled by this action term: "
+                        f"{joint_names}"
+                    )
+                idx = name_to_local[name]
+                mask[idx] = True
+                target[idx] = value
+            self._frozen_mask = mask
+            self._frozen_target = target
 
         # -- Jacobian buffers (same as DifferentialIKAction) --
         nworld = self.num_envs
@@ -271,6 +300,11 @@ class ResidualIKAction(ActionTerm):
         q_current = self._entity.data.joint_pos[:, self._joint_ids]
         q_target = q_current + dq_base + dq_residual
         q_target = q_target.clamp(self._joint_lower, self._joint_upper)
+
+        # 8. Frozen-joint overrides (play/deploy only — see cfg docstring).
+        if self._frozen_mask is not None:
+            assert self._frozen_target is not None
+            q_target = torch.where(self._frozen_mask, self._frozen_target, q_target)
 
         self._entity.set_joint_position_target(q_target, joint_ids=self._joint_ids)
 

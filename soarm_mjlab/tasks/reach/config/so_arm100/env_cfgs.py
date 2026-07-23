@@ -13,6 +13,7 @@ from mjlab.sensor import ContactSensorCfg
 from soarm_mjlab.assets.robots import get_so_arm100_robot_cfg
 from soarm_mjlab.assets.robots.so_arm100.so_arm100_constants import (
     EE_SITE_NAME,
+    SO_ARM100_GRIPPER_CLOSED_RAD,
     SO_ARM100_RESIDUAL_SCALE,
     get_spec,
 )
@@ -125,5 +126,11 @@ def so_arm100_reach_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         ee_pose_cmd = cfg.commands["ee_pose"]
         assert isinstance(ee_pose_cmd, UniformPoseCommandCfg)
         ee_pose_cmd.resampling_time_range = (3.0, 3.0)
+        # Freeze the gripper closed — the Reach reward never scores it, so
+        # it's untrained/uncontrolled; leaving it free during play produces
+        # meaningless motion that distracts from watching the arm reach.
+        joint_pos_action.frozen_joints = {"gripper": SO_ARM100_GRIPPER_CLOSED_RAD}
+        # Show the reachable-workspace box targets are sampled from.
+        ee_pose_cmd.viz.show_workspace = True
 
     return cfg

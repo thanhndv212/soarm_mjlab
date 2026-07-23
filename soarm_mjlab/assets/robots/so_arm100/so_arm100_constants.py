@@ -197,6 +197,18 @@ SO_ARM100_RESIDUAL_SCALE: dict[str, float] = {
     "gripper": 0.05,
 }
 
+# Gripper joint target (rad) for the closed jaw position. The MJCF's
+# "gripper" joint range is [-0.1745, 1.7453] rad; HOME_KEYFRAME already
+# rests the gripper at 0.0, near the lower/closed end of that range (0.17
+# rad above the true minimum) rather than the middle — consistent with
+# "closed" being near the lower limit and "open" extending toward the
+# upper limit. Used only for ResidualIKActionCfg.frozen_joints in play
+# mode (see env_cfgs.py) — the Reach task's reward never scores the
+# gripper, so training leaves it uncontrolled/untrained; freezing it
+# closed during play avoids an untrained, meaningless gripper motion
+# distracting from watching the arm's reach behavior.
+SO_ARM100_GRIPPER_CLOSED_RAD: float = -0.1745
+
 
 if __name__ == "__main__":
     import mujoco.viewer as viewer
