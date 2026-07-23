@@ -55,7 +55,7 @@ on a rented GPU.
 
 *The trained policy (checkpoint `y4bomfz3`/`model_1499.pt`, ~30% episode
 success, ~0.04m position error — see
-`docs/reach_training_debug_log_v1_v11.md` for the full tuning history)
+`docs/reach_training_debug_log.md` for the full tuning history)
 driving the end effector toward a randomized target (orange sphere,
 turns green on success) across 4 parallel envs.*
 
@@ -109,7 +109,7 @@ uv run python scripts/play.py SoArm100-Reach \
 `--no-terminations` watches full rollouts without early episode cutoffs;
 `--agent zero`/`--agent random` swap in a dummy policy to sanity-check the
 env itself independent of any checkpoint. See
-`docs/reach_training_debug_log_v1_v11.md` for the tuning history behind the
+`docs/reach_training_debug_log.md` for the tuning history behind the
 current best checkpoint (v9: ~30% success, ~0.04m position error) and the
 open leads for pushing past that plateau.
 

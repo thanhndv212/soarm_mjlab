@@ -90,7 +90,7 @@
   `mujoco-warp==3.10.0.3` (the latest release, which also fixes a
   multi-env domain-randomization crash and CUDA 700 crashes from mass
   domain randomization on some GPU architectures — both relevant given the
-  large `num_envs` runs in `docs/reach_training_debug_log_v1_v11.md`) and
+  large `num_envs` runs in `docs/reach_training_debug_log.md`) and
   deleted the shim + its import in `soarm_mjlab/tasks/__init__.py`.
   Verified: full test suite (32 tests, `num_envs=2`, the exact case the
   shim guarded) passes on macOS arm64 CPU with the shim gone.
