@@ -171,7 +171,9 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
                 # the counter tops out at 36000. Tighten threshold roughly at
                 # the 1/3 and 2/3 marks of training.
                 "stages": [
-                    {"step": 0, "params": {"threshold": 0.03}},
+                    {"step": 0, "params": {"threshold": 0.05}},
+                    {"step": 12000, "params": {"threshold": 0.04}},
+                    {"step": 24000, "params": {"threshold": 0.03}},
                 ],
             },
         ),
