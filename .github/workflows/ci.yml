@@ -41,7 +41,7 @@ jobs:
         run: uv run ruff check soarm_mjlab tests
 
       - name: Test
-        run: FORCE_CPU=1 uv run pytest
+        run: FORCE_CPU=1 MUJOCO_GL=disabled uv run pytest
 
   train-smoke:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -59,7 +59,7 @@ jobs:
 
       - name: Train (longer smoke slice — still CI-sized, not real training)
         run: |
-          FORCE_CPU=1 uv run python scripts/train.py SoArm100-Reach \
+          FORCE_CPU=1 MUJOCO_GL=disabled uv run python scripts/train.py SoArm100-Reach \
             --env.scene.num-envs=16 --agent.max-iterations=20 \
             --gpu-ids None --agent.logger tensorboard
 
