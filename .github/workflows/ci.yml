@@ -7,19 +7,20 @@ name: CI
 #   test_train_smoke.py's own tiny (2-iteration) PPO run. Every push, every
 #   PR. Red here means the PR doesn't merge.
 # - `train-smoke` (never blocks merges): a longer-but-still-small PPO slice,
-#   on a schedule or manual dispatch only — never on push/pull_request, so
-#   it structurally can't gate a merge. Uploads the checkpoint + tensorboard
-#   log as a build artifact; a failure or reward-curve regression here is a
-#   signal to go look, not a merge blocker. Runs on ubuntu-latest (no GPU
-#   runner configured for this repo) — the roadmap's "GPU-capable runner if
-#   one exists" is conditional precisely because none does yet.
+#   runs on push to main/master (post-merge), on release publish, or manual
+#   dispatch — never on pull_request, so it structurally can't gate a merge.
+#   Uploads the checkpoint + tensorboard log as a build artifact; a failure
+#   or reward-curve regression here is a signal to go look, not a merge
+#   blocker. Runs on ubuntu-latest (no GPU runner configured for this repo)
+#   — the roadmap's "GPU-capable runner if one exists" is conditional
+#   precisely because none does yet.
 
 on:
   push:
     branches: [main, master]
   pull_request:
-  schedule:
-    - cron: "0 3 * * *" # 03:00 UTC daily
+  release:
+    types: [published]
   workflow_dispatch:
 
 jobs:
@@ -44,7 +45,7 @@ jobs:
         run: FORCE_CPU=1 MUJOCO_GL=disabled uv run pytest
 
   train-smoke:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
