@@ -10,6 +10,14 @@ a rented vast.ai GPU and played back locally — see
 `docs/vast_ai_training.md` for the step-by-step guide to running training
 on a rented GPU.
 
+![Trained Reach policy: SO-ARM100 gripper reaching a randomized target pose in sim](docs/images/reach_v9_checkpoint.png)
+
+*The trained policy (checkpoint `y4bomfz3`/`model_1499.pt`, ~30% episode
+success, ~0.04m position error — see
+`docs/reach_training_debug_log_v1_v11.md` for the full tuning history)
+driving the end effector toward a randomized target (orange sphere,
+turns green on success) across 4 parallel envs.*
+
 ## Install
 
 Uses [uv](https://docs.astral.sh/uv/) — not plain pip — because `mjlab` gates
