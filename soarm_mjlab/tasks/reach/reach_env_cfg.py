@@ -65,6 +65,7 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
             frame_name="",  # Set per-robot.
             command_name="ee_pose",
             residual_scale=0.1,  # Override per-robot.
+            max_dq=0.1,  # v14: gentler IK steps to reduce PD tracking oscillation.
         )
     }
 
@@ -76,6 +77,7 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
             debug_vis=True,
             success_threshold=0.03,
             success_steps=10,
+            orientation_threshold=0.5,
         )
     }
 
@@ -130,7 +132,7 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
             weight=5.0,
             params={
                 "command_name": "ee_pose",
-                "sigma": 0.10,
+                "sigma": 0.03,
                 "orientation_weight": 0.5,
                 "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
             },
@@ -141,10 +143,11 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
             params={
                 "command_name": "ee_pose",
                 "threshold": 0.05,
+                "orientation_threshold": 0.5,
                 "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
             },
         ),
-        "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.01),
+        "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.001),
         "joint_pos_limits": RewardTermCfg(
             func=mdp.joint_pos_limits,
             weight=-0.5,
@@ -174,8 +177,8 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
                 # the 1/3 and 2/3 marks of training.
                 "stages": [
                     {"step": 0, "params": {"threshold": 0.05}},
-                    {"step": 12000, "params": {"threshold": 0.04}},
-                    {"step": 24000, "params": {"threshold": 0.03}},
+                    {"step": 24000, "params": {"threshold": 0.04}},
+                    {"step": 48000, "params": {"threshold": 0.03}},
                 ],
             },
         ),

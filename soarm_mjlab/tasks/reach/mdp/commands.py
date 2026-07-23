@@ -77,6 +77,10 @@ class UniformPoseCommand(CommandTerm):
         orientation_error = quat_error_magnitude(self.pose_command_b[:, 3:7], ee_quat_b)
 
         within_threshold = position_error < self.cfg.success_threshold
+        if self.cfg.orientation_threshold > 0.0:
+            within_threshold = within_threshold & (
+                orientation_error < self.cfg.orientation_threshold
+            )
         self.success_streak = torch.where(
             within_threshold,
             self.success_streak + 1,
@@ -217,6 +221,12 @@ class UniformPoseCommandCfg(CommandTermCfg):
     """Position error (m) below which the target counts as reached."""
     success_steps: int = 10
     """Consecutive steps the error must stay below threshold to count as success."""
+    orientation_threshold: float = 0.0
+    """Orientation error (rad) below which the target counts as reached.
+    0 = position-only success (v1–v13 behavior). >0 = orientation-gated
+    success — the base IK controller (orientation_weight=0) provably fails,
+    giving the residual a real task (fix orientation) and preventing reward
+    saturation."""
 
     @dataclass
     class PositionRangeCfg:

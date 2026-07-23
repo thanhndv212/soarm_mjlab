@@ -77,10 +77,11 @@ def success_bonus(
     env: ManagerBasedRlEnv,
     command_name: str,
     threshold: float = 0.05,
+    orientation_threshold: float = 0.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Discrete +1 bonus while the end effector is within ``threshold`` of the
-    target position.
+    target position (and optionally orientation).
 
     Decoupled from the continuous shaped reward (``distance_to_target_shaped``)
     on purpose: a policy can maximize the continuous shaped reward by hugging
@@ -90,15 +91,29 @@ def success_bonus(
     ``threshold`` is intended to be tightened over training via
     ``mdp.reward_curriculum`` (start loose, e.g. 0.05m, end at the true
     success_threshold, e.g. 0.03m).
+
+    When ``orientation_threshold > 0``, success also requires the orientation
+    error (rad) to be below ``orientation_threshold``. This gives the residual
+    a task the position-only IK base controller provably can't do — the base
+    controller has ``orientation_weight=0``, so its orientation error is
+    ~1.2–1.6 rad. With orientation-gated success, the base controller alone
+    **fails**, and the residual's 6-D output (including 3 rotation components)
+    has a real job: fix orientation. This prevents the reward-saturation
+    failure mode where the base controller already passes and PPO has no
+    gradient.
     """
     robot: Entity = env.scene[asset_cfg.name]
     command = env.command_manager.get_command(command_name)
 
     ee_pos_w = robot.data.site_pos_w[:, asset_cfg.site_ids].squeeze(1)
     ee_quat_w = robot.data.site_quat_w[:, asset_cfg.site_ids].squeeze(1)
-    ee_pos_b, _ = subtract_frame_transforms(
+    ee_pos_b, ee_quat_b = subtract_frame_transforms(
         robot.data.root_link_pos_w, robot.data.root_link_quat_w, ee_pos_w, ee_quat_w
     )
 
     position_error = torch.norm(command[:, :3] - ee_pos_b, dim=-1)
-    return (position_error < threshold).float()
+    success = position_error < threshold
+    if orientation_threshold > 0.0:
+        orientation_error = quat_error_magnitude(command[:, 3:7], ee_quat_b)
+        success = success & (orientation_error < orientation_threshold)
+    return success.float()

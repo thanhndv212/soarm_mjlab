@@ -3,10 +3,11 @@
 Companion to `vast_ai_training.md` (how to rent/run) — this document is the
 *what happened* record for the Reach task: a campaign that took the policy from
 **0% success** to a stable **~30% success / ~0.04m position error** plateau
-across 11 training runs (v1–v11) on a rented vast.ai RTX 3090, then a v12
-**reformulation attempt** (residual RL over an IK base controller) that
-exposed a new failure mode — PPO actively degrading a near-optimal base
-controller — plus the reasoning and evidence behind each change. Kept as a
+across 11 training runs (v1–v11) on a rented vast.ai RTX 3090, then v12–v13
+**reformulation attempts** (residual RL over an IK base controller, joint-space
+then goal-perturbation) that exposed the root cause — **reward saturation**:
+the base controller already passes the success criterion, leaving PPO no
+useful gradient — plus the reasoning and evidence behind each change. Kept as a
 debugging case study so future tuning starts from here instead of
 re-discovering the same failure modes.
 
@@ -16,12 +17,12 @@ All runs used `scripts/train.py SoArm100-Reach`, PPO via `rsl_rl`,
 
 ## TL;DR outcome
 
-| | v1 (broken baseline) | v9 (best non-residual) | v12 (residual IK, untrained base) | v12 (residual IK, trained) |
-|---|---|---|---|---|
-| `episode_success` | 0% | ~30% (avg), 75% (peak) | **93.8–97.5%** | 38.3% |
-| `position_error` | 0.34 m | 0.03–0.04 m | **0.017–0.018 m** | 0.049 m |
-| `orientation_error` | 2.12 rad | 0.7 rad (harmless) | 1.23–1.36 rad | 1.24 rad |
-| `mean_reward` | -8.33 | +59 | +5–7 (early) | +45.4 |
+| | v1 (broken baseline) | v9 (best non-residual) | v12 (joint residual, untrained) | v12 (joint residual, trained) | v13 (goal residual, trained) |
+|---|---|---|---|---|---|
+| `episode_success` | 0% | ~30% (avg), 75% (peak) | **93.8–97.5%** | 38.3% | **48.7%** (still climbing) |
+| `position_error` | 0.34 m | 0.03–0.04 m | **0.017–0.018 m** | 0.049 m | 0.049 m |
+| `orientation_error` | 2.12 rad | 0.7 rad (harmless) | 1.23–1.36 rad | 1.24 rad | 1.65 rad |
+| `mean_reward` | -8.33 | +59 | +5–7 (early) | +45.4 | +40.9 |
 
 **Best checkpoint: v9** (non-residual), W&B run
 [`thanhndv212-thanh-nguyen/mjlab/y4bomfz3`](https://wandb.ai/thanhndv212-thanh-nguyen/mjlab/runs/y4bomfz3),
@@ -482,6 +483,132 @@ fix a formulation-level plateau.
 
 ---
 
+## v13 — Goal-perturbation task-space residual (Option B)
+
+### Hypothesis
+
+v12's joint-space additive residual (`q = q_cur + dq_base + dq_residual`)
+creates an adversarial closed loop near the target: the residual kicks the
+arm off target, the base controller corrects back, the residual kicks again
+→ shake. v13 reformulates the residual as a **6-D pose delta that perturbs
+the IK goal** instead of adding to the IK step:
+
+```
+commanded_pose = target_pose + residual_pose_delta
+dq = DLS_IK(commanded_pose, current_pose)
+q_target = q_current + dq          (no joint residual)
+```
+
+The residual steers the IK instead of fighting it — no adversarial closed
+loop, no shake by construction.
+
+### What changed (code)
+
+| File | Change |
+|---|---|
+| `mdp/actions.py` | `ResidualIKActionCfg` gains `residual_mode` (`"joint"` \| `"goal"`), `residual_pos_scale` (0.02 m), `residual_rot_scale` (0.05 rad). `apply_actions` branches: goal mode perturbs the IK target via `quat_box_plus`, no joint residual added. Action dim = 6 in goal mode. |
+| `config/so_arm100/env_cfgs.py` | Switched to `residual_mode="goal"`, `residual_pos_scale=0.02`, `residual_rot_scale=0.05`. Removed per-joint `residual_scale` dict. |
+| `so_arm100_constants.py` | Added `SO_ARM100_RESIDUAL_POS_SCALE=0.02`, `SO_ARM100_RESIDUAL_ROT_SCALE=0.05`. |
+| `rl/runner.py` | ONNX metadata handles goal-mode `action_scale` (list `[pos, rot]`) and `action_space="residual_ik_goal"`. |
+
+### Run log
+
+- **Date**: 2026-07-24
+- **Instance**: vast.ai RTX 3090 (resumed `45629304`)
+- **Command**: `uv run python scripts/train.py SoArm100-Reach --env.scene.num-envs=4096`
+- **W&B run**: [`thanhndv212-thanh-nguyen/mjlab/rdu35bvj`](https://wandb.ai/thanhndv212-thanh-nguyen/mjlab/runs/rdu35bvj)
+- **Duration**: 1500/1500 iterations, ~14 minutes
+
+**Full trajectory** (sampled every 50 iters):
+
+| Iter | `episode_success` | `position_error` | `action_std` | Phase |
+|---|---|---|---|---|
+| 1 | 23.7% | 0.171 m | 0.50 | Base + noise |
+| 50 | **81.1%** | 0.036 m | 0.50 | Base controller dominates |
+| 100 | 14.1% | 0.060 m | 0.46 | Degradation begins |
+| 500 | 1.4% | 0.071 m | 0.37 | |
+| 850 | **0.3%** | 0.077 m | 0.31 | Rock bottom |
+| 1000 | 4.2% | 0.073 m | 0.29 | Floor |
+| 1100 | 16.6% | 0.062 m | 0.29 | **Recovery begins** |
+| 1250 | 44.7% | 0.050 m | 0.28 | |
+| 1500 | **48.7%** | 0.049 m | 0.26 | Still climbing |
+
+### Result: degradation then self-correcting recovery, but still below base
+
+v13 follows a **three-phase trajectory**:
+
+1. **Iter 1–50 (base controller dominates):** 81% success, 0.036 m error.
+   The residual is noise; the IK base controller does the work.
+2. **Iter 50–850 (degradation):** success collapses to 0.3%. `action_std`
+   drops 0.50 → 0.31. The regularization terms (action_rate_l2 + entropy
+   decay) bias the residual mean away from zero on a flat reward surface
+   (the base controller already saturates the reward at 0.036 m << 0.05 m
+   threshold). The policy degrades the base controller's targeting.
+3. **Iter 1000–1500 (recovery):** success climbs 4% → 49%. Once the policy
+   is bad enough that the reward surface is no longer flat, PPO has a real
+   gradient and re-learns reaching — but **from scratch**, not as a
+   residual. The base controller's contribution is swamped.
+
+**Final: 48.7% success / 0.049 m** — better than v12 (38.3%) and v9 (30%),
+and **still climbing** at iter 1500 (a longer run might keep improving). But
+still far below the 81% the base controller alone achieves at iter 50.
+
+### Diagnosis: the root cause is reward saturation, not the residual formulation
+
+The v12 hypothesis ("base/residual fighting") was **wrong** — playing the
+base controller alone (`--agent zero`) confirmed the shake is inherent to
+the DLS IK + PD servo loop (moving-target oscillation from recomputing
+`q_target` every 20ms step), not caused by the residual. v13's
+goal-perturbation didn't fix the shake because the shake was never the
+residual's fault.
+
+The real root cause: **the base IK controller already saturates the reward.**
+At 0.017–0.036 m error, the success threshold (0.05 m, tightening to 0.03 m)
+is passed by a wide margin, and the shaped reward (`exp(-error/0.10)`) is
+near its maximum. PPO has no useful gradient — the advantage `A = R - V(s)`
+collapses toward zero because `R` is always high regardless of the residual.
+The policy gradient is then dominated by regularization (action_rate_l2,
+entropy decay), which biases the residual mean away from the optimal
+near-zero value.
+
+The recovery at iter 1000+ confirms this: once the policy degrades enough
+that it's no longer saturating the reward, PPO gets a real gradient and
+starts learning — but it's learning to reach from scratch, not learning a
+residual. The base controller is wasted.
+
+### Comparison: v9 vs v12 vs v13
+
+| | v9 (no residual) | v12 (joint residual) | v13 (goal residual) |
+|---|---|---|---|
+| Peak (early) | 75% (mid-run) | 94–98% (iter 1–3) | 81% (iter 50) |
+| Floor | — | 16.9% (iter 500) | 0.3% (iter 850) |
+| Final | ~30% avg | 38.3% | **48.7%** |
+| Trend at end | stable | declining | **still climbing** |
+| `action_std` final | 0.08 | 0.25 | 0.26 |
+| `position_error` final | 0.03–0.04 m | 0.049 m | 0.049 m |
+
+### What v14 needs to do
+
+Give the residual a **task the base controller can't already do**, so the
+reward surface isn't flat from iter 1:
+
+1. **Orientation-gated success:** the base controller has
+   `orientation_weight=0`, so `orientation_error` is ~1.2–1.6 rad. If
+   success requires both position AND orientation, the base controller
+   **fails** — the residual's 6-D output (including 3 rotation components)
+   has a real job: fix orientation. This is the natural fit for
+   goal-perturbation mode.
+2. **Tighter reward kernel:** `sigma=0.02–0.03` instead of `0.10`. At
+   0.017 m base error, `exp(-0.017/0.02) = 0.43` — far from saturated, with
+   a sharp gradient.
+3. **Reduce `max_dq`:** 0.5 → 0.05–0.1. The shake observed in base-only
+   playback is the IK+PD moving-target oscillation; gentler IK steps let
+   the PD track without overshoot.
+4. **Reduce `action_rate_l2`:** the regularization term most directly
+   responsible for the degradation on a flat reward surface.
+
+---
+
 ## Full change ledger by file
 
 `soarm_mjlab/assets/robots/so_arm100/so_arm100_constants.py`:
@@ -495,6 +622,8 @@ fix a formulation-level plateau.
 - `ARTICULATION.soft_joint_pos_limit_factor`: `0.9` → `0.95` (v9).
 - Added `SO_ARM100_RESIDUAL_SCALE` dict (v12): arm joints `0.1` rad,
   gripper `0.05` rad — the residual policy output scale.
+- Added `SO_ARM100_RESIDUAL_POS_SCALE=0.02` / `SO_ARM100_RESIDUAL_ROT_SCALE=0.05`
+  (v13): goal-perturbation pose-delta scales (meters / rad).
 
 `soarm_mjlab/tasks/reach/reach_env_cfg.py`:
 - Removed `joint_limit_violated` `TerminationTermCfg` (v4).
@@ -512,6 +641,8 @@ fix a formulation-level plateau.
   `0.05→0.04→0.03` at steps `0/12000/24000`.
 - Action term swapped from `JointPositionActionCfg` to
   `ResidualIKActionCfg` (v12).
+- v13: switched to `residual_mode="goal"`, `residual_pos_scale=0.02`,
+  `residual_rot_scale=0.05`; removed per-joint `residual_scale` dict.
 
 `soarm_mjlab/tasks/reach/mdp/rewards.py`:
 - Added `distance_to_target_shaped(sigma, orientation_weight, ...)` (v6).
@@ -522,6 +653,9 @@ fix a formulation-level plateau.
   (`mujoco_warp.jac`) + joint-space residual, `q_target = q_current +
   dq_base_ik + dq_residual`. Reuses mjlab's `DifferentialIKAction`
   Jacobian/DLS machinery.
+- v13: added `residual_mode` (`"joint"` \| `"goal"`), `residual_pos_scale`,
+  `residual_rot_scale`. Goal mode perturbs the IK target via
+  `quat_box_plus` (6-D pose delta), no joint residual added.
 
 `soarm_mjlab/tasks/reach/config/so_arm100/env_cfgs.py`:
 - `_compute_reachable_workspace`: FK sampling range `joint.range` (hard
