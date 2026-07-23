@@ -12,4 +12,3 @@ from .commands import *  # noqa: F401, F403
 from .observations import *  # noqa: F401, F403
 from .rewards import *  # noqa: F401, F403
 from .terminations import *  # noqa: F401, F403
-from soarm_mjlab.tasks.reach.mdp.rewards import distance_to_target_shaped
