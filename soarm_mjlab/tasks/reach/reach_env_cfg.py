@@ -6,6 +6,7 @@ from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.action_manager import ActionTermCfg
 from mjlab.managers.command_manager import CommandTermCfg
+from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.event_manager import EventTermCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
@@ -132,10 +133,19 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
                 "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
             },
         ),
+        "success_bonus": RewardTermCfg(
+            func=mdp.success_bonus,
+            weight=10.0,
+            params={
+                "command_name": "ee_pose",
+                "threshold": 0.05,
+                "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
+            },
+        ),
         "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.01),
         "joint_pos_limits": RewardTermCfg(
             func=mdp.joint_pos_limits,
-            weight=-1.0,
+            weight=-0.5,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
         ),
     }
@@ -151,7 +161,24 @@ def make_reach_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
     }
 
+    curriculum: dict[str, CurriculumTermCfg] = {
+        "success_threshold_curriculum": CurriculumTermCfg(
+            func=mdp.reward_curriculum,
+            params={
+                "reward_name": "success_bonus",
+                # common_step_counter increments once per env.step() call
+                # (num_steps_per_env=24/iteration), so with max_iterations=1500
+                # the counter tops out at 36000. Tighten threshold roughly at
+                # the 1/3 and 2/3 marks of training.
+                "stages": [
+                    {"step": 0, "params": {"threshold": 0.03}},
+                ],
+            },
+        ),
+    }
+
     return ManagerBasedRlEnvCfg(
+        curriculum=curriculum,
         scene=SceneCfg(
             terrain=TerrainEntityCfg(terrain_type="plane"),
             num_envs=1,

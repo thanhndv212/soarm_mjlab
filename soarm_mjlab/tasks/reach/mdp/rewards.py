@@ -72,3 +72,33 @@ def distance_to_target_shaped(
         orientation_error = quat_error_magnitude(command[:, 3:7], ee_quat_b)
         shaped = shaped + orientation_weight * torch.exp(-orientation_error / sigma)
     return shaped
+
+def success_bonus(
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    threshold: float = 0.05,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Discrete +1 bonus while the end effector is within ``threshold`` of the
+    target position.
+
+    Decoupled from the continuous shaped reward (``distance_to_target_shaped``)
+    on purpose: a policy can maximize the continuous shaped reward by hugging
+    the target from just outside the strict success radius, without ever
+    crossing it. This term directly rewards the pass/fail condition so the
+    optimized objective and the actual success metric don't diverge.
+    ``threshold`` is intended to be tightened over training via
+    ``mdp.reward_curriculum`` (start loose, e.g. 0.05m, end at the true
+    success_threshold, e.g. 0.03m).
+    """
+    robot: Entity = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+
+    ee_pos_w = robot.data.site_pos_w[:, asset_cfg.site_ids].squeeze(1)
+    ee_quat_w = robot.data.site_quat_w[:, asset_cfg.site_ids].squeeze(1)
+    ee_pos_b, _ = subtract_frame_transforms(
+        robot.data.root_link_pos_w, robot.data.root_link_quat_w, ee_pos_w, ee_quat_w
+    )
+
+    position_error = torch.norm(command[:, :3] - ee_pos_b, dim=-1)
+    return (position_error < threshold).float()

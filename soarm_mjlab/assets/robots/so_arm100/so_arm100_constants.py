@@ -153,7 +153,7 @@ GRIPPER_ONLY_COLLISION = CollisionCfg(
 
 ARTICULATION = EntityArticulationInfoCfg(
     actuators=ARM_ACTUATORS,
-    soft_joint_pos_limit_factor=0.9,
+    soft_joint_pos_limit_factor=0.95,
 )
 
 

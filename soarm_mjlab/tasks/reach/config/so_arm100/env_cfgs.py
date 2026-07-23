@@ -103,6 +103,8 @@ def so_arm100_reach_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["distance_to_target"].params["asset_cfg"] = ee_site_cfg
     if "distance_to_target_shaped" in cfg.rewards:
         cfg.rewards["distance_to_target_shaped"].params["asset_cfg"] = ee_site_cfg
+    if "success_bonus" in cfg.rewards:
+        cfg.rewards["success_bonus"].params["asset_cfg"] = ee_site_cfg
 
     assert cfg.scene.sensors is not None
     for sensor in cfg.scene.sensors:
