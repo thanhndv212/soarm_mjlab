@@ -5,6 +5,47 @@ deployed through `soarm_sdk.RobotInterface` — the same interface real-hardware
 control already uses, so a trained policy doesn't care whether it's driving
 simulation or a physical arm.
 
+## Context & dependencies
+
+This package is one piece of a larger workspace, `soarm-ws`, that collects
+five independent Python packages for the SO-ARM100 robot arm plus the
+upstream hardware repo. Each package has its own GitHub remote; `soarm-ws`
+tracks them together via git submodules:
+
+```
+soarm-ws/              ← workspace root (tracks submodule commits)
+├── soarm_mjlab/       ← this package → github.com/thanhndv212/soarm_mjlab
+├── soarm_sdk/         → github.com/thanhndv212/soarm_sdk
+├── imu_sdk/           → github.com/thanhndv212/imu_sdk
+├── m5teleop/          → github.com/thanhndv212/m5teleop
+├── camera_calibration/→ github.com/thanhndv212/camera_calibration
+├── soarm_lerobot/     → github.com/thanhndv212/soarm_lerobot
+└── SO-ARM100/         → github.com/TheRobotStudio/SO-ARM100 (read-only upstream)
+```
+
+- **SO-ARM100** ([TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100))
+  is a low-cost 6-DOF robotic arm built from 3D-printed parts and STS3215
+  serial-bus servos. The hardware repo ships URDF and MuJoCo MJCF models
+  (`SO-ARM100/Simulation/`); this package vendors the SO101-revision MJCF
+  and meshes directly into `soarm_mjlab/assets/robots/so_arm100/xmls/` so
+  the training package is self-contained — cloning `soarm_mjlab` alone is
+  enough to train, no cross-submodule file references at runtime.
+- **soarm_sdk**
+  ([thanhndv212/soarm_sdk](https://github.com/thanhndv212/soarm_sdk)) is the
+  Python driver layer for the arm: servo calibration, a `RobotInterface`
+  abstraction over the serial bus, and `configs/soarm100.yaml`, the
+  canonical joint names / home pose / servo-ID mapping. This package
+  mirrors that config 1:1 (see `so_arm100_constants.py`'s `JOINT_NAMES`
+  and `HOME_KEYFRAME`) so a policy trained in sim drops onto the real arm
+  without a joint-name or sign-convention translation step. Deployment is
+  `policy.onnx → soarm_sdk.RobotInterface` in Python, not a C++ runtime —
+  see "Why not the reference architecture's C++ deployment stack?" below.
+- **soarm-ws** itself has no root build tool — each package is installed
+  and tested independently. `soarm_mjlab` is the only package in the
+  workspace that uses `uv` (for GPU/CPU torch-extras routing); the others
+  are plain `pip install -e .`. See the workspace root `AGENTS.md` for the
+  full cross-package layout, git-submodule workflow, and hardware runbook.
+
 The Reach policy has been trained end-to-end on
 a rented vast.ai GPU and played back locally — see
 `docs/vast_ai_training.md` for the step-by-step guide to running training
